@@ -53,9 +53,9 @@ def test_yolo(yolo, test_dataset, display_raw=False, display_prediction=False):
 
 
 if __name__ == "__main__":
-    image = Image.open('car.jpg')
     model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
-    breakpoint()
-    test_dataset = OpenImagesDatasetYolo('dataset', ['Car'], download=False, limit=100)
+    # target_classes = ['car']
+    # model.classes = target_classes
+    test_dataset = OpenImagesDatasetYolo('dataset', ['Car'], download=False, limit=10)
     dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     test_yolo(model, dataloader, display_raw=False, display_prediction=True)
