@@ -29,9 +29,9 @@ def preprocess_yolo_output(predictions):
             ymax = pd_frame.iloc[i]['ymax']
             class_id = pd_frame.iloc[i]['class']
             class_name = pd_frame.iloc[i]['name']
-            if class_name == "car":
-                obj = pred_label(class_name, xmin, ymin, xmax, ymax)
-                _objects.append(obj)
+            # if class_name == "car":
+            obj = pred_label(class_name, xmin, ymin, xmax, ymax)
+            _objects.append(obj)
         objects.append(_objects)
     return objects
 
@@ -47,85 +47,46 @@ def single_label(all_predictions, all_ground):
             all_ground_post.append(pred_ground)
     return all_predictions_post, all_ground_post
         
-def calculate_metrics(all_predictions, all_ground_truths):
+def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.80):
     if "Detections" in str(type(all_predictions[0])):
         all_predictions_post = preprocess_yolo_output(all_predictions)
         all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
-        all_predictions_post, all_ground_truths_post = single_label(all_predictions_post, all_ground_truths_post)
-    # Initialize variables
+        # all_predictions_post, all_ground_truths_post = single_label(all_predictions_post, all_ground_truths_post)
+
+
     true_positives = 0
     false_positives = 0
     false_negatives = 0
     precision = 0
     recall = 0
-    return true_positives, false_positives, false_negatives, precision, recall
-    # # Calculate precision and recall
-    # for pred_boxes, pred_labels in all_predictions:
-    #     for pred_box, pred_label in zip(pred_boxes, pred_labels):
-    #         found_match = False
-    #         for gt_boxes, gt_labels in all_ground_truths:
-    #             for gt_box, gt_label in zip(gt_boxes, gt_labels):
-    #                 iou = calculate_iou(pred_box, gt_box)
-    #                 if iou > 0.5 and pred_label == gt_label:
-    #                     true_positives += 1
-    #                     found_match = True
-    #                     break
-    #             if found_match:
-    #                 break
-    #         if not found_match:
-    #             false_positives += 1
 
-    # for gt_boxes, gt_labels in all_ground_truths:
-    #     for gt_box, gt_label in zip(gt_boxes, gt_labels):
-    #         found_match = False
-    #         for pred_boxes, pred_labels in all_predictions:
-    #             for pred_box, pred_label in zip(pred_boxes, pred_labels):
-    #                 iou = calculate_iou(pred_box, gt_box)
-    #                 if iou > 0.5 and pred_label == gt_label:
-    #                     found_match = True
-    #                     break
-    #             if found_match:
-    #                 break
-    #         if not found_match:
-    #             false_negatives += 1
+    for ground_truths in all_ground_truths_post:
+        found_match = False
+        found_false_positive = False
+        for preds in all_predictions_post:
+            for pred in preds:
+                pred_box = (pred.xmin, pred.ymin, pred.xmax - pred.xmin, pred.ymax - pred.ymin)
+                gt_box = (ground_truths.xmin, ground_truths.ymin, ground_truths.xmax - ground_truths.xmin, ground_truths.ymax - ground_truths.ymin)
+                iou = calculate_iou(pred_box, gt_box)
+                if iou > iou_threshold and pred.label_class == ground_truths.label_class:
+                    if not found_match and not found_false_positive:
+                        true_positives += 1
+                        found_match = True
+                elif iou > iou_threshold and pred.label_class != ground_truths.label_class:
+                    if not found_match and not found_false_positive:
+                        false_positives += 1
+                        found_false_positive = True
+                        
+        if not found_match and not found_false_positive:
+            false_negatives += 1
 
-    # if true_positives + false_positives > 0:
-    #     precision = true_positives / (true_positives + false_positives)
-    # if true_positives + false_negatives > 0:
-    #     recall = true_positives / (true_positives + false_negatives)
+    precision = true_positives / (true_positives + false_positives) if true_positives + false_positives > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if true_positives + false_negatives > 0 else 0  
+    average_precision = precision * recall # assume we have 1 class
 
-    # # Calculate mAP (mean Average Precision)
-    # average_precision = 0
-    # num_ground_truths = len(all_ground_truths)
-
-    # for pred_boxes, pred_labels in all_predictions:
-    #     precision_at_recall = []
-    #     num_ground_truths_detected = 0
-
-    #     for pred_box, pred_label in zip(pred_boxes, pred_labels):
-    #         max_iou = 0
-    #         for gt_boxes, gt_labels in all_ground_truths:
-    #             for gt_box, gt_label in zip(gt_boxes, gt_labels):
-    #                 iou = calculate_iou(pred_box, gt_box)
-    #                 if iou > max_iou and pred_label == gt_label:
-    #                     max_iou = iou
-    #         if max_iou > 0.5:
-    #             precision_at_recall.append(1)
-    #             num_ground_truths_detected += 1
-    #         else:
-    #             precision_at_recall.append(0)
-
-    #     precision_at_recall = [x for _,x in sorted(zip(pred_boxes, precision_at_recall), reverse=True)]
-    #     precision_at_recall = np.cumsum(precision_at_recall) / (np.arange(len(precision_at_recall)) + 1)
-    #     if num_ground_truths_detected > 0:
-    #         average_precision += precision_at_recall[-1] / num_ground_truths_detected
-
-    # mAP = average_precision / num_ground_truths
-
-    # return precision, recall, mAP
+    return precision, recall, average_precision
 
 def calculate_iou(box1, box2):
-    # Calculate Intersection over Union (IoU) of two bounding boxes
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2
 

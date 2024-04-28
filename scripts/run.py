@@ -37,17 +37,15 @@ def test_yolo(yolo, test_dataset, display_raw=False, display_prediction=False):
     all_predictions = []
     all_ground_truths = []
 
-    for images, targets in test_dataset:  # Corrected variable name from 'image' to 'images'
+    for images, targets in test_dataset:
         with torch.no_grad():
-            predictions = yolo(images)  # Move images to device before passing to model
+            predictions = yolo(images)
         if display_raw:
             display_image(images, output_dir="imgs/raw")
-        # if display_prediction:
-        #     display_image(predictions, output_dir="imgs/predictions")
         all_predictions.append(predictions)
         all_ground_truths.append(targets)
     
-    # Calculate precision, recall, and mAP
+
     precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
     print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
 
@@ -56,6 +54,6 @@ if __name__ == "__main__":
     model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
     # target_classes = ['car']
     # model.classes = target_classes
-    test_dataset = OpenImagesDatasetYolo('dataset', ['Car'], download=False, limit=10)
+    test_dataset = OpenImagesDatasetYolo('dataset', ['Car'], download=True, limit=1000)
     dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     test_yolo(model, dataloader, display_raw=False, display_prediction=True)
