@@ -44,10 +44,14 @@ class OpenImagesDataset(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
         if transform is None:
                 transform = transforms.Compose([
-                    # transforms.Resize((256, 256)),
+                    transforms.Resize((256, 256)),
                     transforms.ToTensor()
                 ])
+                
         self.transform = transform
+        self.transform2 = transforms.Compose([
+            transforms.ToTensor()
+        ])
         if download:
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
@@ -76,16 +80,28 @@ class OpenImagesDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.images)
+    
+    def _valiate(self, path1, path2):
+        file_name1 = path1.split('/')[-1]
+        file_name1 = file_name1.split('.')[0]
+        file_name2 = path2.split('/')[-1]
+        file_name2 = file_name2.split('.')[0]
+        if file_name1 != file_name2:
+            raise ValueError("File names are not same")
 
     def __getitem__(self, idx):
         image = Image.open(self.images[idx])
+        orignal_img = image.copy()
         if image.mode != 'RGB':
             image = image.convert('RGB')
         label_path = self.labels[idx]
         label = parse_annotation(label_path)
         if self.transform:
             image = self.transform(image)
-        return image, label
+        if self.transform2:
+            orignal_img = self.transform2(orignal_img)
+        self._valiate(self.images[idx], self.labels[idx])
+        return image, label, orignal_img
 
 class OpenImagesDatasetYolo(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
@@ -123,7 +139,17 @@ class OpenImagesDatasetYolo(torch.utils.data.Dataset):
         image = self.images[idx]
         label_path = self.labels[idx]
         label = parse_annotation(label_path)
+        self._valiate(self.images[idx], self.labels[idx])
         return image, label
+    
+    def _valiate(self, path1, path2):
+        file_name1 = path1.split('/')[-1]
+        file_name1 = file_name1.split('.')[0]
+        file_name2 = path2.split('/')[-1]
+        file_name2 = file_name2.split('.')[0]
+        if file_name1 != file_name2:
+            raise ValueError("File names are not same")
+
 
 if __name__ == "__main__":
     classes = ['Car']
