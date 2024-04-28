@@ -1,8 +1,106 @@
 import numpy as np
+import torch
 from collections import namedtuple
 from yolov5.models.common import Detections
 
-pred_label = namedtuple('pred_label', ['label_class', 'xmin', 'ymin', 'xmax', 'ymax'])
+pred_label = namedtuple('pred_label', ['label_class', 'xmin', 'ymin', 'xmax', 'ymax', 'orig_h', 'orig_w'])
+
+def label_2_class_name(label):
+    label_to_class = {
+    1: "person",
+    2: "bicycle",
+    3: "car",
+    4: "motorcycle",
+    5: "airplane",
+    6: "bus",
+    7: "train",
+    8: "truck",
+    9: "boat",
+    10: "traffic light",
+    11: "fire hydrant",
+    12: "street sign",
+    13: "stop sign",
+    14: "parking meter",
+    15: "bench",
+    16: "bird",
+    17: "cat",
+    18: "dog",
+    19: "horse",
+    20: "sheep",
+    21: "cow",
+    22: "elephant",
+    23: "bear",
+    24: "zebra",
+    25: "giraffe",
+    26: "hat",
+    27: "backpack",
+    28: "umbrella",
+    29: "shoe",
+    30: "eye glasses",
+    31: "handbag",
+    32: "tie",
+    33: "suitcase",
+    34: "frisbee",
+    35: "skis",
+    36: "snowboard",
+    37: "sports ball",
+    38: "kite",
+    39: "baseball bat",
+    40: "baseball glove",
+    41: "skateboard",
+    42: "surfboard",
+    43: "tennis racket",
+    44: "bottle",
+    45: "plate",
+    46: "wine glass",
+    47: "cup",
+    48: "fork",
+    49: "knife",
+    50: "spoon",
+    51: "bowl",
+    52: "banana",
+    53: "apple",
+    54: "sandwich",
+    55: "orange",
+    56: "broccoli",
+    57: "carrot",
+    58: "hot dog",
+    59: "pizza",
+    60: "donut",
+    61: "cake",
+    62: "chair",
+    63: "couch",
+    64: "potted plant",
+    65: "bed",
+    66: "mirror",
+    67: "dining table",
+    68: "window",
+    69: "desk",
+    70: "toilet",
+    71: "door",
+    72: "tv",
+    73: "laptop",
+    74: "mouse",
+    75: "remote",
+    76: "keyboard",
+    77: "cell phone",
+    78: "microwave",
+    79: "oven",
+    80: "toaster",
+    81: "sink",
+    82: "refrigerator",
+    83: "blender",
+    84: "book",
+    85: "clock",
+    86: "vase",
+    87: "scissors",
+    88: "teddy bear",
+    89: "hair drier",
+    90: "toothbrush",
+    91: "hair brush"
+    }
+    return label_to_class[label]
+
 
 def preprocess_yolo_labels(labels):
     objects = []
@@ -13,15 +111,19 @@ def preprocess_yolo_labels(labels):
             ymin = pred_tuple.ymin.item()
             xmax = pred_tuple.xmax.item()
             ymax = pred_tuple.ymax.item()
-            obj = pred_label(pred_label_name, xmin, ymin, xmax, ymax)
+            orig_h = pred_tuple.orig_h.item()
+            orig_w = pred_tuple.orig_w.item()
+            obj = pred_label(pred_label_name, xmin, ymin, xmax, ymax, orig_h, orig_w)
             objects.append(obj)
     return objects
 
-def preprocess_yolo_output(predictions):
+def preprocess_yolo_output(predictions, grond_truths):
     objects = []
-    for predict in predictions:
+    for predict, gt in zip(predictions, grond_truths):
         _objects = []
         pd_frame = predict.pandas().xyxy[0]
+        orig_h = gt.orig_h
+        orig_w = gt.orig_w
         for i in range(len(pd_frame)):
             xmin = pd_frame.iloc[i]['xmin']
             ymin = pd_frame.iloc[i]['ymin']
@@ -29,8 +131,26 @@ def preprocess_yolo_output(predictions):
             ymax = pd_frame.iloc[i]['ymax']
             class_id = pd_frame.iloc[i]['class']
             class_name = pd_frame.iloc[i]['name']
-            # if class_name == "car":
-            obj = pred_label(class_name, xmin, ymin, xmax, ymax)
+            obj = pred_label(class_name, xmin, ymin, xmax, ymax, orig_h, orig_w)
+            _objects.append(obj)
+        objects.append(_objects)
+    return objects
+
+def preprocess_vit_output(predictions, ground_truths):
+    objects = []
+    for predict, gt in zip(predictions, ground_truths):
+        _objects = []
+        pred_labels = torch.max(predict['pred_logits'], dim=2).indices[0]
+        pred_boxes = predict['pred_boxes'][0]
+        orig_h = gt.orig_h
+        orig_w = gt.orig_w
+        for label, box in zip(pred_labels, pred_boxes):
+            class_name = label_2_class_name(label.item())
+            xmax = box[0].item()
+            ymax = box[1].item()
+            xmin = box[2].item()
+            ymin = box[3].item()
+            obj = pred_label(class_name, xmin, ymin, xmax, ymax, orig_h, orig_w)
             _objects.append(obj)
         objects.append(_objects)
     return objects
@@ -47,18 +167,22 @@ def single_label(all_predictions, all_ground):
             all_ground_post.append(pred_ground)
     return all_predictions_post, all_ground_post
         
-def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.80):
+def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.50):
     if "Detections" in str(type(all_predictions[0])):
-        all_predictions_post = preprocess_yolo_output(all_predictions)
         all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
+        all_predictions_post = preprocess_yolo_output(all_predictions, all_ground_truths_post)
+        
         # all_predictions_post, all_ground_truths_post = single_label(all_predictions_post, all_ground_truths_post)
-
+    elif isinstance(all_predictions[0], dict):
+        all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
+        all_predictions_post = preprocess_vit_output(all_predictions, all_ground_truths_post)   
 
     true_positives = 0
     false_positives = 0
     false_negatives = 0
     precision = 0
     recall = 0
+
 
     for ground_truths in all_ground_truths_post:
         found_match = False
@@ -69,17 +193,15 @@ def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.80):
                 gt_box = (ground_truths.xmin, ground_truths.ymin, ground_truths.xmax - ground_truths.xmin, ground_truths.ymax - ground_truths.ymin)
                 iou = calculate_iou(pred_box, gt_box)
                 if iou > iou_threshold and pred.label_class == ground_truths.label_class:
-                    if not found_match and not found_false_positive:
-                        true_positives += 1
-                        found_match = True
+                    true_positives += 1
+                    found_match = True
                 elif iou > iou_threshold and pred.label_class != ground_truths.label_class:
-                    if not found_match and not found_false_positive:
-                        false_positives += 1
-                        found_false_positive = True
+                    false_positives += 1
+                    found_false_positive = True
                         
         if not found_match and not found_false_positive:
             false_negatives += 1
-
+    
     precision = true_positives / (true_positives + false_positives) if true_positives + false_positives > 0 else 0
     recall = true_positives / (true_positives + false_negatives) if true_positives + false_negatives > 0 else 0  
     average_precision = precision * recall # assume we have 1 class

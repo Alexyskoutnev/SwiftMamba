@@ -26,6 +26,9 @@ def parse_annotation(xml_file):
     root = tree.getroot()
     filename = root.find('filename').text
     objects = []
+    for obj in root.findall('size'):
+        width = int(obj.find('width').text)
+        height = int(obj.find('height').text)
     for obj in root.findall('object'):
         obj_name = obj.find('name').text
         bbox = obj.find('bndbox')
@@ -33,8 +36,8 @@ def parse_annotation(xml_file):
         xmax = int(bbox.find('xmax').text)
         ymin = int(bbox.find('ymin').text)
         ymax = int(bbox.find('ymax').text)
-        obj = pred_label(obj_name, xmin, ymin, xmax, ymax)
-        objects.append(obj)
+        obj = pred_label(obj_name, xmin, ymin, xmax, ymax, height, width)
+    objects.append(obj)
     return objects
 
 class OpenImagesDataset(torch.utils.data.Dataset):
@@ -46,12 +49,26 @@ class OpenImagesDataset(torch.utils.data.Dataset):
                 ])
         self.transform = transform
         if download:
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
+            if os.path.exists(f"{download_dir}/{classes_name[0].lower()}"):
+                os.system(f"rm -rf {download_dir}/{classes_name[0].lower()}")
             self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
             self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels = preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            self.labels, deleted_labels =  preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            for label in deleted_labels:
+                file_name = label.split('/')[-1]
+                file_name = file_name.split('.')[0]
+                file_name += '.jpg'
+                self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
         else:
             self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels = preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            self.labels, deleted_labels = preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            for label in deleted_labels:
+                file_name = label.split('/')[-1]
+                file_name = file_name.split('.')[0]
+                file_name += '.jpg'
+                self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
 
     def __len__(self):
         return len(self.images)
