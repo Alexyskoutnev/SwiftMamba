@@ -44,7 +44,7 @@ class OpenImagesDataset(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
         if transform is None:
                 transform = transforms.Compose([
-                    transforms.Resize((256, 256)),
+                    # transforms.Resize((256, 256)),
                     transforms.ToTensor()
                 ])
         self.transform = transform
@@ -63,12 +63,16 @@ class OpenImagesDataset(torch.utils.data.Dataset):
                 self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
         else:
             self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels, deleted_labels = preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            self.images = sorted(self.images)
+            self.labels = glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml")
+            self.labels = sorted(self.labels)
+            self.labels, deleted_labels = preprocess_dataset_one_label(self.labels)
             for label in deleted_labels:
                 file_name = label.split('/')[-1]
                 file_name = file_name.split('.')[0]
                 file_name += '.jpg'
                 self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+                print("Deleted: ", f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
 
     def __len__(self):
         return len(self.images)
@@ -100,12 +104,16 @@ class OpenImagesDatasetYolo(torch.utils.data.Dataset):
                 self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
         else:
             self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels, deleted_labels = preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
+            self.images = sorted(self.images)
+            self.labels = glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml")
+            self.labels = sorted(self.labels)
+            self.labels, deleted_labels = preprocess_dataset_one_label(self.labels)
             for label in deleted_labels:
                 file_name = label.split('/')[-1]
                 file_name = file_name.split('.')[0]
                 file_name += '.jpg'
                 self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+                print("Deleted: ", f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
 
     def __len__(self):
         return len(self.labels)

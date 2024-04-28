@@ -2,13 +2,13 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import transformers
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import os
 import time
 import uuid
 
 from MambaVision.dataset import OpenImagesDataset, OpenImagesDatasetYolo
-from MambaVision.utils.metrics import calculate_metrics
+from MambaVision.utils.metrics import calculate_metrics, preprocess_yolo_labels, preprocess_vit_output, preprocess_yolo_output
 import yolov5
 from yolov5.models.common import AutoShape
 
@@ -30,7 +30,40 @@ def display_image(x, output_dir="imgs"):
             # img = Image.fromarray(x[i].mul(255).permute(1, 2, 0).byte().cpu().numpy())
             # img.save(os.path.join(IMG_DIR, f'image_{i}.jpg'))
 
-def test_yolo(yolo, test_dataset, display_raw=False, display_prediction=False):
+def display_bounding_box_image(images, all_ground_truths, all_predictions):
+    for i, (image, ground_truth, prediction) in enumerate(zip(images, all_ground_truths, all_predictions)):
+        if isinstance(image, torch.Tensor):
+            image = image.squeeze(0)
+            img = Image.fromarray(image.mul(255).permute(1, 2, 0).byte().cpu().numpy())
+        elif isinstance(image, tuple):
+            img = image[0]
+            img = Image.open(img)
+        draw = ImageDraw.Draw(img)
+        for pred_label in ground_truth:
+            xmin = pred_label.xmin.item()
+            ymin = pred_label.ymin.item()
+            xmax = pred_label.xmax.item()
+            ymax = pred_label.ymax.item()
+            box = [xmin, ymin, xmax, ymax]
+            label_text = str(pred_label.label_class[0])
+            draw.text((xmin + 10, ymin + 10), label_text, fill='green')
+            draw.rectangle([box[0], box[1], box[2], box[3]], outline='green')
+        for pred_label in prediction:
+            try:
+                if pred_label.label_class == 'car':
+                    xmin = pred_label.xmin
+                    ymin = pred_label.ymin
+                    xmax = pred_label.xmax
+                    ymax = pred_label.ymax
+                    box = [xmin, ymin, xmax, ymax]
+                    label_text = str(pred_label.label_class)
+                    draw.text((xmin + 10, ymin + 10), label_text, fill='red')
+                    draw.rectangle([box[0], box[1], box[2], box[3]], outline='red')
+            except:
+                continue
+        img.save(os.path.join(IMG_DIR, f'image_{i}.jpg'))
+
+def test_yolo(yolo, test_dataset, save_predicted_img=False):
     for f in os.listdir(IMG_DIR):
         os.remove(os.path.join(IMG_DIR, f))
     yolo.eval()
@@ -38,25 +71,32 @@ def test_yolo(yolo, test_dataset, display_raw=False, display_prediction=False):
 
     all_predictions = []
     all_ground_truths = []
+    images_list = []
 
     for images, targets in test_dataset:
         with torch.no_grad():
             predictions = yolo(images)
-        if display_raw:
-            display_image(images, output_dir="imgs/raw")
+
         all_predictions.append(predictions)
         all_ground_truths.append(targets)
+        images_list.append(images)
     
 
     precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
     print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
 
-def test_vit(model, test_dataset):
+    if save_predicted_img:
+        all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
+        all_predictions_post = preprocess_yolo_output(all_predictions, all_ground_truths_post)
+        display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
+
+def test_vit(model, test_dataset, save_predicted_img=False):
     for f in os.listdir(IMG_DIR):
         os.remove(os.path.join(IMG_DIR, f))
 
     all_predictions = []
     all_ground_truths = []
+    images_list = []
 
     for images, targets in test_dataset:
         img_shape = images.shape[-2:]
@@ -67,9 +107,14 @@ def test_vit(model, test_dataset):
             predictions['pred_boxes'] = predictions['pred_boxes'] * torch.tensor([img_w, img_h, img_w, img_h], device=DEVICE)
         all_predictions.append(predictions)
         all_ground_truths.append(targets)
+        images_list.append(images)
 
     precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
     print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
+
+    if save_predicted_img:
+        all_predictions_post = preprocess_vit_output(all_predictions, preprocess_yolo_labels(all_ground_truths)) 
+        display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
 
 def load_model(name, reload_data=False, eval_size=10):
     if name == "yolov5":
@@ -85,11 +130,11 @@ def load_model(name, reload_data=False, eval_size=10):
     return model, dataloader
 
 if __name__ == "__main__":
-    model_name = "yolov5"
-    eval_size = 100
+    model_name = "detr"
+    eval_size = 1000
     print("Using model: ", model_name)
     model, dataloader = load_model(model_name, reload_data=True, eval_size=eval_size)
     if model_name == "yolov5":
-        test_yolo(model, dataloader)
+        test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":
-        test_vit(model, dataloader)
+        test_vit(model, dataloader, save_predicted_img=True)
