@@ -2,12 +2,18 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import transformers
 import torch
+import torch.nn as nn
 from PIL import Image, ImageDraw, ImageFont
+from timm.models import create_model
+from timm.models.vision_transformer import VisionTransformer, _cfg
+from MambaVision.models.mamba.models_mamba import VisionMamba
 import os
 import time
 import uuid
 
 from MambaVision.dataset import OpenImagesDataset, OpenImagesDatasetYolo
+from MambaVision.utils.utils import bounding_box_tensor
+from MambaVision.models.mamba.Mamba_bbox import VisionMambaWithBBox, BBoxLoss
 from MambaVision.utils.metrics import calculate_metrics, preprocess_yolo_labels, preprocess_vit_output, preprocess_yolo_output
 import yolov5
 from yolov5.models.common import AutoShape
@@ -118,6 +124,30 @@ def test_vit(model, test_dataset, save_predicted_img=False):
         all_predictions_post = preprocess_vit_output(all_predictions, preprocess_yolo_labels(all_ground_truths)) 
         display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
 
+def train_mamba(model, test_dataset, config=None):  
+
+    for f in os.listdir(IMG_DIR):
+        os.remove(os.path.join(IMG_DIR, f))
+
+    all_predictions = []
+    all_ground_truths = []
+    images_list = []
+    loss_fn = nn.SmoothL1Loss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    
+    for epoch in range(10):
+        for images, targets, original_img in test_dataset:
+            optimizer.zero_grad()
+            predictions = model(images.to(DEVICE))
+            gt_t = bounding_box_tensor(targets, device=DEVICE) 
+            loss = BBoxLoss()(predictions, gt_t)
+            print(f"Loss: {loss.item()}")
+            breakpoint()
+            loss.backward()
+            optimizer.step()
+
+
+
 def load_model(name, reload_data=False, eval_size=10):
     if name == "yolov5":
         model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
@@ -129,10 +159,25 @@ def load_model(name, reload_data=False, eval_size=10):
         model.to(DEVICE)
         dataset = OpenImagesDataset('dataset', ['Car'], download=reload_data, limit=eval_size)
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    elif name == 'mamba_train':
+        model = create_model(
+            'deit_base_patch16_224',
+            pretrained=False,
+            num_classes=100,
+            drop_rate=0.0,
+            drop_path_rate=0.1,
+            drop_block_rate=None,
+            img_size=256,
+        )
+        model = VisionMambaWithBBox(base_model = model)
+        model.to(DEVICE)
+        dataset = OpenImagesDataset('dataset', ['Car'], download=reload_data, limit=eval_size)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+
     return model, dataloader
 
 if __name__ == "__main__":
-    model_name = "yolov5"
+    model_name = "mamba_train"
     eval_size = 100
     print("Using model: ", model_name)
     model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size)
@@ -140,3 +185,5 @@ if __name__ == "__main__":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":
         test_vit(model, dataloader, save_predicted_img=True)
+    elif model_name == "mamba_train":
+        train_mamba(model, dataloader)

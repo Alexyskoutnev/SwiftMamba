@@ -63,6 +63,11 @@ def build_dataset(is_train, args):
         dataset = torchvision.datasets.CIFAR100(root='./dataset/cifar', train=True,download=True, transform=transform)
         # dataset = datasets.CIFAR100(args.data_path, train=is_train, transform=transform)
         nb_classes = 100
+    if args.data_set == 'OpenImages':
+        if not os.path.exists('./dataset/cifar'):
+            os.mkdir('./dataset/cifar')
+        dataset = torchvision.datasets.ImageFolder(root='./dataset/cifar', transform=transform)
+
     # elif args.data_set == 'IMNET':
     #     root = os.path.join(args.data_path, 'train' if is_train else 'val')
     #     dataset = datasets.ImageFolder(root, transform=transform)

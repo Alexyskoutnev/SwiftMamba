@@ -21,7 +21,7 @@ from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.utils.generation import GenerationMixin
 from mamba_ssm.utils.hf import load_config_hf, load_state_dict_hf
 
-from rope import *
+from MambaVision.models.mamba.rope import *
 import random
 
 try:
@@ -34,7 +34,6 @@ __all__ = [
     'vim_tiny_patch16_224', 'vim_small_patch16_224', 'vim_base_patch16_224',
     'vim_tiny_patch16_384', 'vim_small_patch16_384', 'vim_base_patch16_384',
 ]
-
 
 class PatchEmbed(nn.Module):
     """ 2D Image to Patch Embedding
@@ -537,14 +536,18 @@ class VisionMamba(nn.Module):
         else:
             raise NotImplementedError
 
-    def forward(self, x, return_features=False, inference_params=None, if_random_cls_token_position=False, if_random_token_rank=False):
+    def forward(self, x, return_features=False, inference_params=None, if_random_cls_token_position=False, if_random_token_rank=False, bounding_box=None):
         x = self.forward_features(x, inference_params, if_random_cls_token_position=if_random_cls_token_position, if_random_token_rank=if_random_token_rank)
         if return_features:
             return x
-        x = self.head(x)
-        if self.final_pool_type == 'max':
-            x = x.max(dim=1)[0]
-        return x
+        if bounding_box is not None:
+            x = self.bbox_head(x)
+            return x
+        else:
+            x = self.head(x)
+            if self.final_pool_type == 'max':
+                x = x.max(dim=1)[0]
+            return x
 
 
 @register_model
