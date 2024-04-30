@@ -1,4 +1,9 @@
 import torch
+from MambaVision.utils.metrics import pred_label
+
+NUM_2_CLASSES = ["car", "ambulance", "bicycle", "bus", "helicopter", "motorcycle", "truck", "van"]
+CLASSES_2_NUM = {v: k for k, v in enumerate(NUM_2_CLASSES)}
+
 
 def bounding_box_tensor(pred_labels, device=None):
     """
@@ -13,3 +18,32 @@ def bounding_box_tensor(pred_labels, device=None):
     for i, pred_label in enumerate(pred_labels):
         pred_t[i] = torch.tensor([pred_label.xmin / img_w, pred_label.ymin / img_h, pred_label.xmax / img_w, pred_label.ymax / img_h], dtype=torch.float32)
     return pred_t
+
+def bounding_box_to_labels(bboxs, label, img_w, img_h, device=None):
+    """
+    Convert the bounding box tensor to labels
+    Args:
+        bboxs (torch.Tensor): The bounding box tensor
+    Returns:
+        list: The predicted labels
+    """
+    pred_labels = []
+    for bbox in bboxs:
+        xmin, ymin, xmax, ymax = bbox
+        xmin = xmin.item()
+        ymin = ymin.item()
+        xmax = xmax.item()
+        ymax = ymax.item()
+        pred_labels.append(pred_label(label, xmin, ymin, xmax, ymax, img_h, img_w))
+    return pred_labels
+
+def mamba_num_to_class(x):
+    """
+    Convert the integer to class
+    Args:
+        x (int): The integer
+    Returns:
+        str: The class
+    """
+    dict = {0: "Car", 1: "Ambulance", 2: "Bicycle", 3: "Bus", 4: "Helicopter", 5: "Motorcycle", 6: "Truck", 7: "Van"}
+    return dict[x]

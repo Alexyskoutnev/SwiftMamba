@@ -155,6 +155,22 @@ def preprocess_vit_output(predictions, ground_truths):
         objects.append(_objects)
     return objects
 
+def preprocess_mamba(predictions, ground_truths):
+    objects = []
+    for predicts, gt in zip(predictions, ground_truths):
+        _objects = []
+        orig_h = gt.orig_h
+        orig_w = gt.orig_w
+        for predict in predicts:
+            xmin = predict.xmin * orig_w
+            ymin = predict.ymin * orig_h
+            xmax = predict.xmax * orig_w
+            ymax = predict.ymax * orig_h
+            obj = pred_label(predict.label_class.lower(), xmin, ymin, xmax, ymax, orig_h, orig_w)
+            _objects.append(obj)
+        objects.append(_objects)
+    return objects
+
 def single_label(all_predictions, all_ground):
     all_predictions_post = []
     all_ground_post = []
@@ -176,6 +192,10 @@ def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.50):
     elif isinstance(all_predictions[0], dict):
         all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
         all_predictions_post = preprocess_vit_output(all_predictions, all_ground_truths_post)   
+    else:
+        all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
+        all_predictions_post = preprocess_mamba(all_predictions, all_ground_truths_post)
+
 
     true_positives = 0
     false_positives = 0

@@ -42,6 +42,8 @@ def parse_annotation(xml_file):
 
 class OpenImagesDataset(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
+        self.labels = []
+        self.images = []
         if transform is None:
                 transform = transforms.Compose([
                     transforms.Resize((224, 224)),
@@ -55,28 +57,36 @@ class OpenImagesDataset(torch.utils.data.Dataset):
         if download:
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
-            if os.path.exists(f"{download_dir}/{classes_name[0].lower()}"):
-                os.system(f"rm -rf {download_dir}/{classes_name[0].lower()}")
-            self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
-            self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels, deleted_labels =  preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
-            for label in deleted_labels:
-                file_name = label.split('/')[-1]
-                file_name = file_name.split('.')[0]
-                file_name += '.jpg'
-                self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+            for class_name in classes_name:
+                if os.path.exists(f"{download_dir}/{class_name.lower()}"):
+                    os.system(f"rm -rf {download_dir}/{class_name.lower()}")
+                self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
         else:
-            self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.images = sorted(self.images)
-            self.labels = glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml")
-            self.labels = sorted(self.labels)
-            self.labels, deleted_labels = preprocess_dataset_one_label(self.labels)
-            for label in deleted_labels:
-                file_name = label.split('/')[-1]
-                file_name = file_name.split('.')[0]
-                file_name += '.jpg'
-                self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
-                print("Deleted: ", f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+            for class_name in classes_name:
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
 
     def __len__(self):
         return len(self.images)
@@ -105,19 +115,27 @@ class OpenImagesDataset(torch.utils.data.Dataset):
 
 class OpenImagesDatasetYolo(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
+        self.labels = []
+        self.images = []
         if download:
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
-            if os.path.exists(f"{download_dir}/{classes_name[0].lower()}"):
-                os.system(f"rm -rf {download_dir}/{classes_name[0].lower()}")
-            self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
-            self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
-            self.labels, deleted_labels =  preprocess_dataset_one_label(glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml"))
-            for label in deleted_labels:
-                file_name = label.split('/')[-1]
-                file_name = file_name.split('.')[0]
-                file_name += '.jpg'
-                self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+            for class_name in classes_name:
+                if os.path.exists(f"{download_dir}/{classes_name[0].lower()}"):
+                    os.system(f"rm -rf {download_dir}/{classes_name[0].lower()}")
+                self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+                _images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _label = glob.glob(f"{download_dir}/{classes_name[0].lower()}/pascal/*.xml")
+                _label = sorted(_label)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
+                self.images.extend(_images)
         else:
             self.images = glob.glob(f"{download_dir}/{classes_name[0].lower()}/images/*.jpg")
             self.images = sorted(self.images)
@@ -158,7 +176,7 @@ if __name__ == "__main__":
         transforms.Resize((256, 256)),
         transforms.ToTensor()
     ])
-    limit = 100 
+    limit = 10
     dataset = OpenImagesDataset(download_dir, classes, transform=transform, limit=limit)
     for image, label in dataset:
         print(image, label)

@@ -12,8 +12,8 @@ import time
 import uuid
 
 from MambaVision.dataset import OpenImagesDataset, OpenImagesDatasetYolo
-from MambaVision.utils.utils import bounding_box_tensor
-from MambaVision.models.mamba.Mamba_bbox import VisionMambaWithBBox, BBoxLoss
+from MambaVision.utils.utils import *
+from MambaVision.models.mamba.Mamba_bbox import VisionMambaBBox, BBoxLoss
 from MambaVision.utils.metrics import calculate_metrics, preprocess_yolo_labels, preprocess_vit_output, preprocess_yolo_output
 import yolov5
 from yolov5.models.common import AutoShape
@@ -124,88 +124,101 @@ def test_vit(model, test_dataset, save_predicted_img=False):
         all_predictions_post = preprocess_vit_output(all_predictions, preprocess_yolo_labels(all_ground_truths)) 
         display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
 
-def train_mamba(model, test_dataset, config=None):  
+def train_mamba(model, test_dataset, config=None, epochs=1000):  
 
     for f in os.listdir(IMG_DIR):
         os.remove(os.path.join(IMG_DIR, f))
 
-    all_predictions = []
-    all_ground_truths = []
     images_list = []
     loss_fn = nn.SmoothL1Loss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    for epoch in range(10):
+    for epoch in range(epochs):
+        loss_t = 0.0
+        all_predictions = []
+        all_ground_truths = []
         for images, targets, original_img in test_dataset:
             optimizer.zero_grad()
-            predictions = model(images.to(DEVICE))
-            gt_t = bounding_box_tensor(targets, device=DEVICE) 
-            loss = BBoxLoss()(predictions, gt_t)
-            print(f"Loss: {loss.item()}")
-            breakpoint()
+            img_w, img_h = targets[0].orig_w.item(), targets[0].orig_h.item()
+            class_pred, bbox_pred = model(images.to(DEVICE)) 
+            class_pred_2 = torch.argmax(class_pred.squeeze(0)).item()
+            class_pred_label = mamba_num_to_class(class_pred_2)
+            predictions_label = bounding_box_to_labels(bbox_pred, class_pred_label, img_w, img_h, device=DEVICE)
+            gt_t = bounding_box_tensor(targets, device=DEVICE)
+            target_label_num = CLASSES_2_NUM[targets[0].label_class[0]]
+            loss = BBoxLoss()(bbox_pred, gt_t, class_pred, target_label_num, device=DEVICE)
             loss.backward()
             optimizer.step()
+            loss_t += loss.item()
+            all_predictions.append(predictions_label)
+            all_ground_truths.append(targets)
+        
+        print(f"Epoch: {epoch}, Loss: {loss_t}")
+        precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
+        print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
 
-def load_model(name, reload_data=False, eval_size=10):
+def load_mamba_model(num_classes=1):
+    model = create_model(
+        'deit_base_patch16_224',
+        pretrained=True,
+        num_classes=100,
+        drop_rate=0.0,
+        drop_path_rate=0.1,
+        drop_block_rate=None,
+        img_size=224,
+    )
+    checkpoint_model = model.state_dict()
+    for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
+        if k in checkpoint_model :
+            print(f"Removing key {k} from pretrained checkpoint")
+            del checkpoint_model[k]
+    pos_embed_checkpoint = checkpoint_model['pos_embed']
+    embedding_size = pos_embed_checkpoint.shape[-1]
+    num_patches = model.patch_embed.num_patches
+    num_extra_tokens = model.pos_embed.shape[-2] - num_patches
+    orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
+    new_size = int(num_patches ** 0.5)
+    extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
+    pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
+    pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
+    pos_tokens = torch.nn.functional.interpolate(
+        pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
+    pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
+    new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
+    checkpoint_model['pos_embed'] = new_pos_embed
+    del model.head
+    model.load_state_dict(checkpoint_model, strict=False)
+    model = VisionMambaBBox(base_model = model, num_classes=num_classes)
+    model.to(DEVICE)
+    model.train()
+    return model
+
+def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Car'], shuffle=True):
     if name == "yolov5":
         model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
-        dataset = OpenImagesDatasetYolo('dataset', ['Car'], download=reload_data, limit=eval_size)
+        dataset = OpenImagesDatasetYolo('dataset', classes, download=reload_data, limit=eval_size)
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
     elif name == "detr":
         model = torch.hub.load("facebookresearch/detr", "detr_resnet50", pretrained=True)
         model.eval()
         model.to(DEVICE)
-        dataset = OpenImagesDataset('dataset', ['Car'], download=reload_data, limit=eval_size)
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     elif name == 'mamba_train':
-        model = create_model(
-            'deit_base_patch16_224',
-            pretrained=True,
-            num_classes=100,
-            drop_rate=0.0,
-            drop_path_rate=0.1,
-            drop_block_rate=None,
-            img_size=224,
-        )
-        checkpoint_model = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
-            if k in checkpoint_model :
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
-
-        pos_embed_checkpoint = checkpoint_model['pos_embed']
-        embedding_size = pos_embed_checkpoint.shape[-1]
-        num_patches = model.patch_embed.num_patches
-        num_extra_tokens = model.pos_embed.shape[-2] - num_patches
-        # height (== width) for the checkpoint position embedding
-        orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
-        # height (== width) for the new position embedding
-        new_size = int(num_patches ** 0.5)
-        # class_token and dist_token are kept unchanged
-        extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
-        # only the position tokens are interpolated
-        pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
-        pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
-        pos_tokens = torch.nn.functional.interpolate(
-            pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
-        pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
-        new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-        checkpoint_model['pos_embed'] = new_pos_embed
-        del model.head
-        model.load_state_dict(checkpoint_model, strict=False)
-        model = VisionMambaWithBBox(base_model = model)
-        model.to(DEVICE)
-        model.train()
-        dataset = OpenImagesDataset('dataset', ['Car'], download=reload_data, limit=eval_size)
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-
+        dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
+        num_classes = len(classes)
+        model = load_mamba_model(num_classes)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    elif name == "mamba_eval":
+        pass
     return model, dataloader
 
 if __name__ == "__main__":
     model_name = "mamba_train"
-    eval_size = 100
+    eval_size = 500
+    classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
-    model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size)
+    model, dataloader = load_model(model_name, reload_data=True, eval_size=eval_size, batch_size=1, classes=classes)
     if model_name == "yolov5":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":

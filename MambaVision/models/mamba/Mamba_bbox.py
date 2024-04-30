@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -22,23 +23,31 @@ class BBoxHead(nn.Module):
         x = self.fc2(x)
         return x
 
-class VisionMambaWithBBox(nn.Module):
+class VisionMambaBBox(nn.Module):
     def __init__(self, 
-                 base_model,):
+                 base_model,
+                 num_classes=100):
         super().__init__()
         self.mamba = base_model
         self.mamba.head = torch.nn.Identity()
-        self.bc_head = BBoxHead(768, 4)
+        self.class_head = nn.Linear(self.mamba.norm.bias.shape[0], num_classes)
+        self.bc_head = BBoxHead(self.mamba.norm.bias.shape[0], 4)
 
     def forward(self, x):
         x = self.mamba(x)
-        return self.bc_head(x)
+        class_predictions = self.class_head(x)
+        bbox_predictions = self.bc_head(x)
+        return class_predictions, bbox_predictions
 
-# Define the loss function for bounding box prediction
+
 class BBoxLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, smoothing=0.1):
         super().__init__()
         self.loss_fn = nn.SmoothL1Loss()
+        self.class_loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, pred_bbox, target_bbox):
-        return self.loss_fn(pred_bbox, target_bbox)
+    def forward(self, pred_bbox : List[int], target_bbox : List[int], pred_class : int, target_class: int, device: str):
+        bbox_loss = self.loss_fn(pred_bbox, target_bbox)
+        target_class = torch.tensor([target_class], dtype=torch.long).to(device)
+        class_loss = self.class_loss_fn(pred_class, target_class)
+        return bbox_loss + class_loss
