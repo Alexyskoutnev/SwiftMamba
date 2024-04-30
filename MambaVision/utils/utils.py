@@ -13,7 +13,17 @@ def save_model(model):
     _time = dt.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     torch.save(model.state_dict(), f"{SAVE_MODEL_PATH}/{model.__class__.__name__}_{_time}.pt")
     print(f"Saved to {SAVE_MODEL_PATH}/{model.__class__.__name__}_{_time}.pt")
-    
+
+
+def load_model(model, path):
+    """
+    Load the model
+    """
+    model.load_state_dict(torch.load(path))
+    print(f"Loaded from {path}")
+
+
+
 def bounding_box_tensor(pred_labels, device=None):
     """
     Convert the predicted labels to a bounding box tensor

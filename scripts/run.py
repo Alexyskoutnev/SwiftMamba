@@ -160,8 +160,8 @@ def train_mamba(model, test_dataset, config=None, epochs=100):
         if epoch % 10 == 0:
             save_model(model)
             
-
-
+def test_mamba_model(model, test_dataset, save_predicted_imgs=False):
+    pass
 
 def load_mamba_model(num_classes=1):
     model = create_model(
@@ -199,7 +199,7 @@ def load_mamba_model(num_classes=1):
     model.train()
     return model
 
-def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Car'], shuffle=True):
+def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Car'], shuffle=True, load_path=None):
     if name == "yolov5":
         model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
         dataset = OpenImagesDatasetYolo('dataset', classes, download=reload_data, limit=eval_size)
@@ -216,18 +216,28 @@ def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Ca
         model = load_mamba_model(num_classes)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     elif name == "mamba_eval":
-        pass
+        dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
+        num_classes = len(classes)
+        model = load_mamba_model(num_classes)
+        model.eval()
+        model = load_model(model, load_path)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return model, dataloader
 
 if __name__ == "__main__":
-    model_name = "mamba_train"
+    model_name = "mamba_eval"
+    model_path = f"models/VisionMambaBBox_2021-10-06-15-00-00.pt" or None
     eval_size = 500
     classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
-    model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size, batch_size=1, classes=classes)
+    model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size, batch_size=1, classes=classes, load_path=model_path)
     if model_name == "yolov5":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":
         test_vit(model, dataloader, save_predicted_img=True)
     elif model_name == "mamba_train":
         train_mamba(model, dataloader)
+    elif model_name == "mamba_eval":
+        test_mamba_model(model, dataloader, save_predicted_imgs=True)
+    else:
+        print("Invalid model name")
