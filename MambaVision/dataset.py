@@ -44,7 +44,7 @@ class OpenImagesDataset(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
         if transform is None:
                 transform = transforms.Compose([
-                    transforms.Resize((256, 256)),
+                    transforms.Resize((224, 224)),
                     transforms.ToTensor()
                 ])
                 

@@ -12,7 +12,8 @@ from pathlib import Path
 
 from timm.data import Mixup
 from timm.models import create_model
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+# from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+# from timm.loss import SoftTargetCrossEntropy
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
@@ -31,6 +32,45 @@ import utils
 
 # log about
 import mlflow
+
+import torch
+import torch.nn as nn
+
+class LabelSmoothingCrossEntropy(nn.Module):
+    def __init__(self, smoothing=0.1, reduction='mean'):
+        super(LabelSmoothingCrossEntropy, self).__init__()
+        self.smoothing = smoothing
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        log_prob = torch.nn.functional.log_softmax(pred, dim=-1)
+        nll_loss = -log_prob.gather(dim=-1, index=target.unsqueeze(1))
+        nll_loss = nll_loss.squeeze(1)
+        smooth_loss = -log_prob.mean(dim=-1)
+        loss = (1.0 - self.smoothing) * nll_loss + self.smoothing * smooth_loss
+
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        else:
+            return loss
+        
+class SoftTargetCrossEntropy(nn.Module):
+    def __init__(self, reduction='mean'):
+        super(SoftTargetCrossEntropy, self).__init__()
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        log_prob = torch.nn.functional.log_softmax(pred, dim=-1)
+        loss = torch.sum(-target * log_prob, dim=-1)
+
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        else:
+            return loss
 
 
 def get_args_parser():
@@ -392,6 +432,7 @@ def main(args):
         
     if args.bce_loss:
         criterion = torch.nn.BCEWithLogitsLoss()
+    breakpoint()
         
     teacher_model = None
     if args.distillation_type != 'none':

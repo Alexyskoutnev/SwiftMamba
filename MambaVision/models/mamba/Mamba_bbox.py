@@ -8,6 +8,7 @@ import argparse
 
 from MambaVision.models.mamba.models_mamba import VisionMamba, vim_tiny_patch16_224_bimambav2_final_pool_mean_abs_pos_embed_with_midclstok_div2
 from MambaVision.dataset import OpenImagesDataset
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 
 class BBoxHead(nn.Module):
@@ -26,10 +27,12 @@ class VisionMambaWithBBox(nn.Module):
                  base_model,):
         super().__init__()
         self.mamba = base_model
-        self.mamba.head = BBoxHead(in_features=base_model.norm.bias.shape[0], num_outputs=4)
+        self.mamba.head = torch.nn.Identity()
+        self.bc_head = BBoxHead(768, 4)
 
     def forward(self, x):
-        return self.mamba(x)
+        x = self.mamba(x)
+        return self.bc_head(x)
 
 # Define the loss function for bounding box prediction
 class BBoxLoss(nn.Module):
@@ -38,5 +41,4 @@ class BBoxLoss(nn.Module):
         self.loss_fn = nn.SmoothL1Loss()
 
     def forward(self, pred_bbox, target_bbox):
-        breakpoint()
         return self.loss_fn(pred_bbox, target_bbox)

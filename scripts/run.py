@@ -146,8 +146,6 @@ def train_mamba(model, test_dataset, config=None):
             loss.backward()
             optimizer.step()
 
-
-
 def load_model(name, reload_data=False, eval_size=10):
     if name == "yolov5":
         model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
@@ -162,15 +160,42 @@ def load_model(name, reload_data=False, eval_size=10):
     elif name == 'mamba_train':
         model = create_model(
             'deit_base_patch16_224',
-            pretrained=False,
+            pretrained=True,
             num_classes=100,
             drop_rate=0.0,
             drop_path_rate=0.1,
             drop_block_rate=None,
-            img_size=256,
+            img_size=224,
         )
+        checkpoint_model = model.state_dict()
+        for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
+            if k in checkpoint_model :
+                print(f"Removing key {k} from pretrained checkpoint")
+                del checkpoint_model[k]
+
+        pos_embed_checkpoint = checkpoint_model['pos_embed']
+        embedding_size = pos_embed_checkpoint.shape[-1]
+        num_patches = model.patch_embed.num_patches
+        num_extra_tokens = model.pos_embed.shape[-2] - num_patches
+        # height (== width) for the checkpoint position embedding
+        orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
+        # height (== width) for the new position embedding
+        new_size = int(num_patches ** 0.5)
+        # class_token and dist_token are kept unchanged
+        extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
+        # only the position tokens are interpolated
+        pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
+        pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
+        pos_tokens = torch.nn.functional.interpolate(
+            pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
+        pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
+        new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
+        checkpoint_model['pos_embed'] = new_pos_embed
+        del model.head
+        model.load_state_dict(checkpoint_model, strict=False)
         model = VisionMambaWithBBox(base_model = model)
         model.to(DEVICE)
+        model.train()
         dataset = OpenImagesDataset('dataset', ['Car'], download=reload_data, limit=eval_size)
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
