@@ -15,14 +15,13 @@ def save_model(model):
     print(f"Saved to {SAVE_MODEL_PATH}/{model.__class__.__name__}_{_time}.pt")
 
 
-def load_model(model, path):
+def load(model, path):
     """
     Load the model
     """
     model.load_state_dict(torch.load(path))
     print(f"Loaded from {path}")
-
-
+    return model
 
 def bounding_box_tensor(pred_labels, device=None):
     """

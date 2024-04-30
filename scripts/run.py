@@ -6,15 +6,16 @@ import torch.nn as nn
 from PIL import Image, ImageDraw, ImageFont
 from timm.models import create_model
 from timm.models.vision_transformer import VisionTransformer, _cfg
-from MambaVision.models.mamba.models_mamba import VisionMamba
 import os
 import time
 import uuid
+from tqdm import tqdm
 
 from MambaVision.dataset import OpenImagesDataset, OpenImagesDatasetYolo
 from MambaVision.utils.utils import *
 from MambaVision.models.mamba.Mamba_bbox import VisionMambaBBox, BBoxLoss
-from MambaVision.utils.metrics import calculate_metrics, preprocess_yolo_labels, preprocess_vit_output, preprocess_yolo_output
+from MambaVision.models.mamba.models_mamba import VisionMamba
+from MambaVision.utils.metrics import calculate_metrics, preprocess_yolo_labels, preprocess_vit_output, preprocess_yolo_output, preprocess_mamba
 import yolov5
 from yolov5.models.common import AutoShape
 
@@ -33,8 +34,6 @@ def display_image(x, output_dir="imgs"):
     elif "predictions" in output_dir:
         for i in range(x.size(0)):
             x.save(os.path.join(IMG_DIR, f'image_{i}.jpg'))
-            # img = Image.fromarray(x[i].mul(255).permute(1, 2, 0).byte().cpu().numpy())
-            # img.save(os.path.join(IMG_DIR, f'image_{i}.jpg'))
 
 def display_bounding_box_image(images, all_ground_truths, all_predictions):
     for i, (image, ground_truth, prediction) in enumerate(zip(images, all_ground_truths, all_predictions)):
@@ -46,30 +45,44 @@ def display_bounding_box_image(images, all_ground_truths, all_predictions):
                 img = image[0]
                 img = Image.open(img)
             draw = ImageDraw.Draw(img)
-            for pred_label in ground_truth:
-                xmin = pred_label.xmin.item()
-                ymin = pred_label.ymin.item()
-                xmax = pred_label.xmax.item()
-                ymax = pred_label.ymax.item()
+            for gt_pred in ground_truth:
+                xmin = gt_pred.xmin.item()
+                ymin = gt_pred.ymin.item()
+                xmax = gt_pred.xmax.item()
+                ymax = gt_pred.ymax.item()
                 box = [xmin, ymin, xmax, ymax]
-                label_text = str(pred_label.label_class[0])
+                label_text = str(gt_pred.label_class[0])
                 draw.text((xmin + 10, ymin + 10), label_text, fill='green')
                 draw.rectangle([box[0], box[1], box[2], box[3]], outline='green')
             for pred_label in prediction:
                 try:
-                    if pred_label.label_class == 'car':
+                    # if pred_label.label_class == 'car':
+                    if type(pred_label.xmin) == torch.Tensor:
+                        xmin = pred_label.xmin.item()
+                    else:
                         xmin = pred_label.xmin
+                    if type(pred_label.ymin) == torch.Tensor:
+                        ymin = pred_label.ymin.item()
+                    else:
                         ymin = pred_label.ymin
+                    if type(pred_label.xmax) == torch.Tensor:
+                        xmax = pred_label.xmax.item()
+                    else:
                         xmax = pred_label.xmax
+                    if type(pred_label.ymax) == torch.Tensor:
+                        ymax = pred_label.ymax.item()
+                    else:
                         ymax = pred_label.ymax
-                        box = [xmin, ymin, xmax, ymax]
-                        label_text = str(pred_label.label_class)
-                        draw.text((xmin + 10, ymin + 10), label_text, fill='red')
-                        draw.rectangle([box[0], box[1], box[2], box[3]], outline='red')
-                except:
+                    box = [xmin, ymin, xmax, ymax]
+                    label_text = str(pred_label.label_class)
+                    draw.text((xmin + 10, ymin + 10), label_text, fill='red')
+                    draw.rectangle([box[0], box[1], box[2], box[3]], outline='red')
+                except Exception as e:
+                    print(f"Error in display_bounding_box_image: {e}")
                     continue
             img.save(os.path.join(IMG_DIR, f'image_{i}.jpg'))
-        except:
+        except Exception as e:
+            print(f"Error in display_bounding_box_image {e}")
             continue
 
 def test_yolo(yolo, test_dataset, save_predicted_img=False):
@@ -161,8 +174,28 @@ def train_mamba(model, test_dataset, config=None, epochs=100):
             save_model(model)
             
 def test_mamba_model(model, test_dataset, save_predicted_imgs=False):
-    pass
+    all_predictions = []
+    all_ground_truths = []
+    images_list = []
 
+    for images, targets, original_img in tqdm(test_dataset):
+        with torch.no_grad():
+            img_w, img_h = targets[0].orig_w.item(), targets[0].orig_h.item()
+            class_pred, bbox_pred = model(images.to(DEVICE))
+            class_pred_2 = torch.argmax(class_pred.squeeze(0)).item()
+            class_pred_label = mamba_num_to_class(class_pred_2)
+            predictions_label = bounding_box_to_labels(bbox_pred, class_pred_label, img_w, img_h, device=DEVICE)
+            all_predictions.append(predictions_label)
+            all_ground_truths.append(targets)
+            images_list.append(original_img)
+
+    precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
+    print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
+
+    if save_predicted_imgs:
+        all_predictions_post = preprocess_mamba(all_predictions, all_ground_truths)
+        display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
+        
 def load_mamba_model(num_classes=1):
     model = create_model(
         'deit_base_patch16_224',
@@ -210,24 +243,20 @@ def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Ca
         model.to(DEVICE)
         dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    elif name == 'mamba_train':
+    elif name == 'mamba':
         dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
         num_classes = len(classes)
         model = load_mamba_model(num_classes)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-    elif name == "mamba_eval":
-        dataset = OpenImagesDataset('dataset', classes, download=reload_data, limit=eval_size)
-        num_classes = len(classes)
-        model = load_mamba_model(num_classes)
-        model.eval()
-        model = load_model(model, load_path)
+        if load_path:
+            model = load(model, load_path)
+            model.eval()
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return model, dataloader
 
 if __name__ == "__main__":
-    model_name = "mamba_eval"
-    model_path = f"models/VisionMambaBBox_2021-10-06-15-00-00.pt" or None
-    eval_size = 500
+    model_name = "mamba"
+    model_path = f"models/VisionMambaBBox_2024-04-30-16-01-47.pt" or None
+    eval_size = 10
     classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
     model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size, batch_size=1, classes=classes, load_path=model_path)
@@ -237,7 +266,7 @@ if __name__ == "__main__":
         test_vit(model, dataloader, save_predicted_img=True)
     elif model_name == "mamba_train":
         train_mamba(model, dataloader)
-    elif model_name == "mamba_eval":
+    elif model_name == "mamba":
         test_mamba_model(model, dataloader, save_predicted_imgs=True)
     else:
         print("Invalid model name")

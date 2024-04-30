@@ -60,7 +60,8 @@ class OpenImagesDataset(torch.utils.data.Dataset):
             for class_name in classes_name:
                 if os.path.exists(f"{download_dir}/{class_name.lower()}"):
                     os.system(f"rm -rf {download_dir}/{class_name.lower()}")
-                self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+            self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+            for class_name in classes_name:
                 _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
                 _images = sorted(_images)
                 _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
