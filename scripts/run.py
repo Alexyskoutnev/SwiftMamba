@@ -124,14 +124,14 @@ def test_vit(model, test_dataset, save_predicted_img=False):
         all_predictions_post = preprocess_vit_output(all_predictions, preprocess_yolo_labels(all_ground_truths)) 
         display_bounding_box_image(images_list, all_ground_truths, all_predictions_post)
 
-def train_mamba(model, test_dataset, config=None, epochs=1000):  
+def train_mamba(model, test_dataset, config=None, epochs=100):  
 
     for f in os.listdir(IMG_DIR):
         os.remove(os.path.join(IMG_DIR, f))
 
     images_list = []
     loss_fn = nn.SmoothL1Loss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
     for epoch in range(epochs):
         loss_t = 0.0
@@ -156,6 +156,12 @@ def train_mamba(model, test_dataset, config=None, epochs=1000):
         print(f"Epoch: {epoch}, Loss: {loss_t}")
         precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
         print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
+
+        if epoch % 10 == 0:
+            save_model(model)
+            
+
+
 
 def load_mamba_model(num_classes=1):
     model = create_model(
@@ -218,7 +224,7 @@ if __name__ == "__main__":
     eval_size = 500
     classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
-    model, dataloader = load_model(model_name, reload_data=True, eval_size=eval_size, batch_size=1, classes=classes)
+    model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size, batch_size=1, classes=classes)
     if model_name == "yolov5":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":

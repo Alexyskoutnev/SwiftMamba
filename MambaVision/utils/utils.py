@@ -1,10 +1,19 @@
 import torch
+import datetime as dt
 from MambaVision.utils.metrics import pred_label
 
 NUM_2_CLASSES = ["car", "ambulance", "bicycle", "bus", "helicopter", "motorcycle", "truck", "van"]
 CLASSES_2_NUM = {v: k for k, v in enumerate(NUM_2_CLASSES)}
+SAVE_MODEL_PATH = "models"
 
-
+def save_model(model):
+    """
+    Save the model
+    """
+    _time = dt.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    torch.save(model.state_dict(), f"{SAVE_MODEL_PATH}/{model.__class__.__name__}_{_time}.pt")
+    print(f"Saved to {SAVE_MODEL_PATH}/{model.__class__.__name__}_{_time}.pt")
+    
 def bounding_box_tensor(pred_labels, device=None):
     """
     Convert the predicted labels to a bounding box tensor
