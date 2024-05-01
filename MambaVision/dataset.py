@@ -45,11 +45,15 @@ class OpenImagesDataset(torch.utils.data.Dataset):
         self.labels = []
         self.images = []
         if transform is None:
+                # transform = transforms.Compose([
+                #     transforms.Resize((224, 224)),
+                #     transforms.ToTensor()
+                # ])
                 transform = transforms.Compose([
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor()
+                    transforms.Resize(800),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                 ])
-                
         self.transform = transform
         self.transform2 = transforms.Compose([
             transforms.ToTensor()
@@ -148,7 +152,6 @@ class OpenImagesDatasetYolo(torch.utils.data.Dataset):
                 file_name = file_name.split('.')[0]
                 file_name += '.jpg'
                 self.images.remove(f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
-                print("Deleted: ", f"{download_dir}/{classes_name[0].lower()}/images/{file_name}")
 
     def __len__(self):
         return len(self.labels)

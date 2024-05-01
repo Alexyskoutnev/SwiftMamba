@@ -7,6 +7,7 @@ pred_label = namedtuple('pred_label', ['label_class', 'xmin', 'ymin', 'xmax', 'y
 
 def label_2_class_name(label):
     label_to_class = {
+    0: "n/a",
     1: "person",
     2: "bicycle",
     3: "car",
@@ -140,16 +141,23 @@ def preprocess_vit_output(predictions, ground_truths):
     objects = []
     for predict, gt in zip(predictions, ground_truths):
         _objects = []
-        pred_labels = torch.max(predict['pred_logits'], dim=2).indices[0]
-        pred_boxes = predict['pred_boxes'][0]
+        pred_labels = predict['pred_logits'].argmax(axis=1)
+        # pred_labels = torch.max(predict['pred_logits'], dim=2).indices[0]
+        pred_boxes = predict['pred_boxes']
         orig_h = gt.orig_h
         orig_w = gt.orig_w
         for label, box in zip(pred_labels, pred_boxes):
             class_name = label_2_class_name(label.item())
-            xmax = box[0].item()
-            ymax = box[1].item()
-            xmin = box[2].item()
-            ymin = box[3].item()
+            if isinstance(box, torch.Tensor):
+                xmin = box[0].item()
+                ymin = box[1].item()
+                xmax = box[2].item()
+                ymax = box[3].item()
+            else:
+                xmin = box[0]
+                ymin = box[1]
+                xmax = box[2]
+                ymax = box[3]
             obj = pred_label(class_name, xmin, ymin, xmax, ymax, orig_h, orig_w)
             _objects.append(obj)
         objects.append(_objects)
@@ -194,7 +202,6 @@ def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.50):
     if "Detections" in str(type(all_predictions[0])):
         all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
         all_predictions_post = preprocess_yolo_output(all_predictions, all_ground_truths_post)
-        
         # all_predictions_post, all_ground_truths_post = single_label(all_predictions_post, all_ground_truths_post)
     elif isinstance(all_predictions[0], dict):
         all_ground_truths_post = preprocess_yolo_labels(all_ground_truths)
@@ -209,7 +216,6 @@ def calculate_metrics(all_predictions, all_ground_truths, iou_threshold=0.50):
     false_negatives = 0
     precision = 0
     recall = 0
-
 
     for ground_truths in all_ground_truths_post:
         found_match = False

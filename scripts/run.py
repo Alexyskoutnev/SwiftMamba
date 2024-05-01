@@ -9,6 +9,7 @@ from timm.models.vision_transformer import VisionTransformer, _cfg
 import os
 import time
 import uuid
+import torchvision.transforms as T
 from tqdm import tqdm
 
 from MambaVision.dataset import OpenImagesDataset, OpenImagesDatasetYolo
@@ -22,6 +23,7 @@ from yolov5.models.common import AutoShape
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 IMG_DIR = 'imgs'
+
 
 def display_image(x, output_dir="imgs"):
     if not os.path.exists(IMG_DIR):
@@ -57,26 +59,26 @@ def display_bounding_box_image(images, all_ground_truths, all_predictions):
             for pred_label in prediction:
                 try:
                     # if pred_label.label_class == 'car':
-                    if type(pred_label.xmin) == torch.Tensor:
-                        xmin = pred_label.xmin.item()
-                    else:
-                        xmin = pred_label.xmin
-                    if type(pred_label.ymin) == torch.Tensor:
-                        ymin = pred_label.ymin.item()
-                    else:
-                        ymin = pred_label.ymin
-                    if type(pred_label.xmax) == torch.Tensor:
-                        xmax = pred_label.xmax.item()
-                    else:
-                        xmax = pred_label.xmax
-                    if type(pred_label.ymax) == torch.Tensor:
-                        ymax = pred_label.ymax.item()
-                    else:
-                        ymax = pred_label.ymax
-                    box = [xmin, ymin, xmax, ymax]
-                    label_text = str(pred_label.label_class)
-                    draw.text((xmin + 10, ymin + 10), label_text, fill='red')
-                    draw.rectangle([box[0], box[1], box[2], box[3]], outline='red')
+                        if type(pred_label.xmin) == torch.Tensor:
+                            xmin = pred_label.xmin.item()
+                        else:
+                            xmin = pred_label.xmin
+                        if type(pred_label.ymin) == torch.Tensor:
+                            ymin = pred_label.ymin.item()
+                        else:
+                            ymin = pred_label.ymin
+                        if type(pred_label.xmax) == torch.Tensor:
+                            xmax = pred_label.xmax.item()
+                        else:
+                            xmax = pred_label.xmax
+                        if type(pred_label.ymax) == torch.Tensor:
+                            ymax = pred_label.ymax.item()
+                        else:
+                            ymax = pred_label.ymax
+                        box = [xmin, ymin, xmax, ymax]
+                        label_text = str(pred_label.label_class)
+                        draw.text((xmin + 10, ymin + 10), label_text, fill='red')
+                        draw.rectangle([box[0], box[1], box[2], box[3]], outline='red')
                 except Exception as e:
                     print(f"Error in display_bounding_box_image: {e}")
                     continue
@@ -95,7 +97,7 @@ def test_yolo(yolo, test_dataset, save_predicted_img=False):
     all_ground_truths = []
     images_list = []
 
-    for images, targets in test_dataset:
+    for images, targets in tqdm(test_dataset):
         with torch.no_grad():
             predictions = yolo(images)
 
@@ -119,19 +121,33 @@ def test_vit(model, test_dataset, save_predicted_img=False):
     all_predictions = []
     all_ground_truths = []
     images_list = []
+    total_time = 0
+    num_iterations = 0
 
-    for images, targets, original_img in test_dataset:
+    for images, targets, original_img in tqdm(test_dataset, total=len(test_dataset),  desc="Image Inference Rate"):
+        start_time = time.time()
+        # ================== Model Prediction ==================
         with torch.no_grad():
             predictions = model(images.to(DEVICE))
             img_w = targets[0].orig_w.item()
             img_h = targets[0].orig_h.item()
-            predictions['pred_boxes'] = predictions['pred_boxes'] * torch.tensor([img_w, img_h, img_w, img_h], device=DEVICE)
+            _prob, _bbox = filter_bboxes_from_outputs(predictions, (img_w, img_h))
+            predictions['pred_boxes'] = _bbox
+            predictions['pred_logits'] = _prob
+        # ================== Model Prediction ==================
         all_predictions.append(predictions)
         all_ground_truths.append(targets)
         images_list.append(original_img)
-
+        # ================== Calculate inference rate ==================
+        end_time = time.time()
+        iteraction_time = end_time - start_time
+        total_time += iteraction_time
+        num_iterations += 1
+        # ================== Calculate inference rate ==================
     precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
     print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
+    avereage_inference_rate = total_time / num_iterations
+    print(f"Average Inference Rate: {avereage_inference_rate}")
 
     if save_predicted_img:
         all_predictions_post = preprocess_vit_output(all_predictions, preprocess_yolo_labels(all_ground_truths)) 
@@ -150,7 +166,8 @@ def train_mamba(model, test_dataset, config=None, epochs=100):
         loss_t = 0.0
         all_predictions = []
         all_ground_truths = []
-        for images, targets, original_img in test_dataset:
+        for images, targets, original_img in tqdm(test_dataset, total=len(test_dataset),  desc="Image Inference Rate"):
+            start_time = time.time()
             optimizer.zero_grad()
             img_w, img_h = targets[0].orig_w.item(), targets[0].orig_h.item()
             class_pred, bbox_pred = model(images.to(DEVICE)) 
@@ -165,7 +182,8 @@ def train_mamba(model, test_dataset, config=None, epochs=100):
             loss_t += loss.item()
             all_predictions.append(predictions_label)
             all_ground_truths.append(targets)
-        
+
+
         print(f"Epoch: {epoch}, Loss: {loss_t}")
         precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
         print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
@@ -177,9 +195,13 @@ def test_mamba_model(model, test_dataset, save_predicted_imgs=False):
     all_predictions = []
     all_ground_truths = []
     images_list = []
+    total_time = 0
+    num_iterations = 0
 
-    for images, targets, original_img in tqdm(test_dataset):
+    for images, targets, original_img in tqdm(test_dataset, total=len(test_dataset), desc="Image Inference Rate"):
         with torch.no_grad():
+            start_time = time.time()
+            # ================== Model Prediction ==========================
             img_w, img_h = targets[0].orig_w.item(), targets[0].orig_h.item()
             class_pred, bbox_pred = model(images.to(DEVICE))
             class_pred_2 = torch.argmax(class_pred.squeeze(0)).item()
@@ -188,9 +210,17 @@ def test_mamba_model(model, test_dataset, save_predicted_imgs=False):
             all_predictions.append(predictions_label)
             all_ground_truths.append(targets)
             images_list.append(original_img)
-
+            # ================== Model Prediction ==========================
+            # ================== Calculate inference rate ==================
+            end_time = time.time()
+            iteraction_time = end_time - start_time
+            total_time += iteraction_time
+            num_iterations += 1
+            # ================== Calculate inference rate ==================
     precision, recall, mAP = calculate_metrics(all_predictions, all_ground_truths)
     print(f"Precision: {precision}, Recall: {recall}, mAP: {mAP}")
+    avereage_inference_rate = total_time / num_iterations
+    print(f"Average Inference Rate: {avereage_inference_rate}")
 
     if save_predicted_imgs:
         all_predictions_post = preprocess_mamba(all_predictions, all_ground_truths)
@@ -254,8 +284,12 @@ def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Ca
     return model, dataloader
 
 if __name__ == "__main__":
-    model_name = "mamba"
-    model_path = f"models/VisionMambaBBox_2024-04-30-16-01-47.pt" or None
+    # model_name = "mamba"
+    model_name = "yolov5"
+    model_name = "detr"
+    train = True
+    # model_path = f"models/VisionMambaBBox_2024-04-30-16-01-47.pt" or None
+    model_path = None
     eval_size = 10
     classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
@@ -264,9 +298,9 @@ if __name__ == "__main__":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":
         test_vit(model, dataloader, save_predicted_img=True)
-    elif model_name == "mamba_train":
+    elif model_name == "mamba" and train:
         train_mamba(model, dataloader)
-    elif model_name == "mamba":
-        test_mamba_model(model, dataloader, save_predicted_imgs=True)
+    # elif model_name == "mamba":
+    #     test_mamba_model(model, dataloader, save_predicted_imgs=True)
     else:
         print("Invalid model name")

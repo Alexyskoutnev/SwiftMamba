@@ -5,6 +5,7 @@ from MambaVision.utils.metrics import pred_label
 NUM_2_CLASSES = ["car", "ambulance", "bicycle", "bus", "helicopter", "motorcycle", "truck", "van"]
 CLASSES_2_NUM = {v: k for k, v in enumerate(NUM_2_CLASSES)}
 SAVE_MODEL_PATH = "models"
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def save_model(model):
     """
@@ -65,3 +66,23 @@ def mamba_num_to_class(x):
     """
     dict = {0: "Car", 1: "Ambulance", 2: "Bicycle", 3: "Bus", 4: "Helicopter", 5: "Motorcycle", 6: "Truck", 7: "Van"}
     return dict[x]
+
+def box_cxcywh_to_xyxy(x):
+    x_c, y_c, w, h = x.unbind(1)
+    b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
+         (x_c + 0.5 * w), (y_c + 0.5 * h)]
+    return torch.stack(b, dim=1)
+
+def rescale_bboxes(out_bbox, size):
+    img_w, img_h = size
+    img_w = torch.tensor([img_w], dtype=torch.float32, device=DEVICE)
+    img_h = torch.tensor([img_h], dtype=torch.float32, device=DEVICE)
+    b = box_cxcywh_to_xyxy(out_bbox)
+    b = b * torch.tensor([img_w, img_h, img_w, img_h], device=DEVICE)
+    return b
+
+def filter_bboxes_from_outputs(outputs, size, threshold=0.6):
+    probas = outputs['pred_logits'].softmax(-1)[0, :, :-1]
+    keep = probas.max(-1).values > threshold
+    bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], size)
+    return probas[keep], bboxes_scaled
