@@ -166,20 +166,27 @@ def preprocess_vit_output(predictions, ground_truths):
 def preprocess_mamba(predictions, ground_truths):
     objects = []
     for predicts, gt in zip(predictions, ground_truths):
-        print(f"type : {type(gt)}")
         try: 
             if type(gt) == list:
                 gt = gt[0]
             _objects = []
             orig_h = gt.orig_h
             orig_w = gt.orig_w
-            for predict in predicts:
-                xmin = predict.xmin * orig_w
-                ymin = predict.ymin * orig_h
-                xmax = predict.xmax * orig_w
-                ymax = predict.ymax * orig_h
-                obj = pred_label(predict.label_class.lower(), xmin, ymin, xmax, ymax, orig_h, orig_w)
+            if type(predicts) == pred_label:
+                xmin = predicts.xmin * orig_w
+                ymin = predicts.ymin * orig_h
+                xmax = predicts.xmax * orig_w
+                ymax = predicts.ymax * orig_h
+                obj = pred_label(predicts.label_class.lower(), xmin, ymin, xmax, ymax, orig_h, orig_w)
                 _objects.append(obj)
+            else:
+                for predict in predicts:
+                    xmin = predict.xmin * orig_w
+                    ymin = predict.ymin * orig_h
+                    xmax = predict.xmax * orig_w
+                    ymax = predict.ymax * orig_h
+                    obj = pred_label(predict.label_class.lower(), xmin, ymin, xmax, ymax, orig_h, orig_w)
+                    _objects.append(obj)
             objects.append(_objects)
         except Exception as e:
             print(f"Error: {e}")

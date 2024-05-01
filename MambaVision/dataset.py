@@ -40,15 +40,11 @@ def parse_annotation(xml_file):
     objects.append(obj)
     return objects
 
-class OpenImagesDataset(torch.utils.data.Dataset):
+class OpenImagesDatasetVIT(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
         self.labels = []
         self.images = []
         if transform is None:
-                # transform = transforms.Compose([
-                #     transforms.Resize((224, 224)),
-                #     transforms.ToTensor()
-                # ])
                 transform = transforms.Compose([
                     transforms.Resize(800),
                     transforms.ToTensor(),
@@ -117,6 +113,150 @@ class OpenImagesDataset(torch.utils.data.Dataset):
             orignal_img = self.transform2(orignal_img)
         self._valiate(self.images[idx], self.labels[idx])
         return image, label, orignal_img
+
+
+class OpenImagesDatasetMamba(torch.utils.data.Dataset):
+    def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
+        self.labels = []
+        self.images = []
+        if transform is None:
+                transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor()
+                ])
+        self.transform = transform
+        self.transform2 = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        if download:
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
+            for class_name in classes_name:
+                if os.path.exists(f"{download_dir}/{class_name.lower()}"):
+                    os.system(f"rm -rf {download_dir}/{class_name.lower()}")
+            self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+            for class_name in classes_name:
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
+        else:
+            for class_name in classes_name:
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
+
+    def __len__(self):
+        return len(self.images)
+    
+    def _valiate(self, path1, path2):
+        file_name1 = path1.split('/')[-1]
+        file_name1 = file_name1.split('.')[0]
+        file_name2 = path2.split('/')[-1]
+        file_name2 = file_name2.split('.')[0]
+        if file_name1 != file_name2:
+            raise ValueError("File names are not same")
+
+    def __getitem__(self, idx):
+        image = Image.open(self.images[idx])
+        orignal_img = image.copy()
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        label_path = self.labels[idx]
+        label = parse_annotation(label_path)
+        if self.transform:
+            image = self.transform(image)
+        if self.transform2:
+            orignal_img = self.transform2(orignal_img)
+        self._valiate(self.images[idx], self.labels[idx])
+        return image, label, orignal_img
+    
+class OpenImagesDatasetMambaTrain(torch.utils.data.Dataset):
+    def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):
+        self.labels = []
+        self.images = []
+        if transform is None:
+                transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor()
+                ])
+        self.transform = transform
+        self.transform2 = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        if download:
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
+            for class_name in classes_name:
+                if os.path.exists(f"{download_dir}/{class_name.lower()}"):
+                    os.system(f"rm -rf {download_dir}/{class_name.lower()}")
+            self.dataset = download_dataset(download_dir, classes_name, annotation_format="pascal", limit=limit)
+            for class_name in classes_name:
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
+        else:
+            for class_name in classes_name:
+                _images = glob.glob(f"{download_dir}/{class_name.lower()}/images/*.jpg")
+                _images = sorted(_images)
+                _labels = glob.glob(f"{download_dir}/{class_name.lower()}/pascal/*.xml")
+                _labels = sorted(_labels)
+                _labels, deleted_labels = preprocess_dataset_one_label(_labels)
+                self.labels.extend(_labels)
+                for label in deleted_labels:
+                    file_name = label.split('/')[-1]
+                    file_name = file_name.split('.')[0]
+                    file_name += '.jpg'
+                    _images.remove(f"{download_dir}/{class_name.lower()}/images/{file_name}")
+                self.images.extend(_images)
+
+    def __len__(self):
+        return len(self.images)
+    
+    def _valiate(self, path1, path2):
+        file_name1 = path1.split('/')[-1]
+        file_name1 = file_name1.split('.')[0]
+        file_name2 = path2.split('/')[-1]
+        file_name2 = file_name2.split('.')[0]
+        if file_name1 != file_name2:
+            raise ValueError("File names are not same")
+
+    def __getitem__(self, idx):
+        image = Image.open(self.images[idx])
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        label_path = self.labels[idx]
+        label = parse_annotation(label_path)
+        if self.transform:
+            image = self.transform(image)
+        self._valiate(self.images[idx], self.labels[idx])
+        return image, label
 
 class OpenImagesDatasetYolo(torch.utils.data.Dataset):
     def __init__(self, download_dir, classes_name, transform=None, limit=100, download=False):

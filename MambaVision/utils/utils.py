@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 import datetime as dt
 from MambaVision.utils.metrics import pred_label
@@ -24,7 +26,20 @@ def load(model, path):
     print(f"Loaded from {path}")
     return model
 
-def bounding_box_tensor(pred_labels, device=None):
+def single_bounding_box_label(box, label, img_h, img_w):
+    """
+    Convert the single bounding box to label
+    Args:
+        label (int): The label
+        box (list): The bounding box
+        img_h (int): The image height
+        img_w (int): The image width
+    Returns:
+        dict: The label
+    """
+    return pred_label(NUM_2_CLASSES[label], box[0][0].item(), box[0][1].item(), box[0][2].item(), box[0][3].item(), img_h, img_w)
+
+def bounding_box_tensor(element, device=None):
     """
     Convert the predicted labels to a bounding box tensor
     Args:
@@ -32,11 +47,17 @@ def bounding_box_tensor(pred_labels, device=None):
     Returns:
         torch.Tensor: The bounding box tensor
     """
-    img_w, img_h = pred_labels[0].orig_w.item(), pred_labels[0].orig_h.item()
-    pred_t = torch.zeros((len(pred_labels), 4), dtype=torch.float32).to(device)
-    for i, pred_label in enumerate(pred_labels):
-        pred_t[i] = torch.tensor([pred_label.xmin / img_w, pred_label.ymin / img_h, pred_label.xmax / img_w, pred_label.ymax / img_h], dtype=torch.float32)
-    return pred_t
+    pred_t = torch.zeros((len(element[0][5]), 4), dtype=torch.float32).to(device)
+    labels = element[0][0]
+    xmin = element[0][1].tolist()
+    ymin = element[0][2].tolist()
+    xmax = element[0][3].tolist()
+    ymax = element[0][4].tolist()
+    img_h = element[0][5].tolist()
+    img_w = element[0][6].tolist()
+    for i in range(len(labels)):
+        pred_t[i] = torch.tensor([xmin[i] / img_w[i], ymin[i] / img_h[i], xmax[i] / img_w[i], ymax[i] / img_h[i]], dtype=torch.float32)
+    return pred_t.to(device)
 
 def bounding_box_to_labels(bboxs, label, img_w, img_h, device=None):
     """
@@ -47,16 +68,16 @@ def bounding_box_to_labels(bboxs, label, img_w, img_h, device=None):
         list: The predicted labels
     """
     pred_labels = []
-    for bbox in bboxs:
+    for bbox, label, w, h in zip(bboxs, label, img_w, img_h):
         xmin, ymin, xmax, ymax = bbox
         xmin = xmin.item()
         ymin = ymin.item()
         xmax = xmax.item()
         ymax = ymax.item()
-        pred_labels.append(pred_label(label, xmin, ymin, xmax, ymax, img_h, img_w))
+        pred_labels.append(pred_label(label, xmin, ymin, xmax, ymax, h, w))
     return pred_labels
 
-def mamba_num_to_class(x):
+def mamba_num_to_class(x : torch.Tensor):
     """
     Convert the integer to class
     Args:
@@ -65,13 +86,24 @@ def mamba_num_to_class(x):
         str: The class
     """
     dict = {0: "Car", 1: "Ambulance", 2: "Bicycle", 3: "Bus", 4: "Helicopter", 5: "Motorcycle", 6: "Truck", 7: "Van"}
-    return dict[x]
+    if type(x) == int:
+        return dict[x]
+    labels = []
+    for label in x:
+        labels.append(dict[label.item()])
+    return labels
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(1)
     b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
          (x_c + 0.5 * w), (y_c + 0.5 * h)]
     return torch.stack(b, dim=1)
+
+def box_cxyh_to_xyxy(b):
+    x_min, y_min, w, h= b.unbind(1)
+    x_max = x_min + w
+    y_max = y_min + h
+    return torch.stack((x_min, y_min, x_max, y_max), dim=1)
 
 def rescale_bboxes(out_bbox, size):
     img_w, img_h = size
@@ -86,3 +118,14 @@ def filter_bboxes_from_outputs(outputs, size, threshold=0.75):
     keep = probas.max(-1).values > threshold
     bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], size)
     return probas[keep], bboxes_scaled
+
+def target_human_to_tensor_label(labels : Tuple[str]):
+    """
+    Convert the target labels to tensor labels
+    Args:
+        labels (Tuple[str]): The target labels
+    Returns:
+        torch.Tensor: The tensor labels
+    """
+    labels = [CLASSES_2_NUM[label] for label in labels]
+    return torch.tensor(labels, dtype=torch.long).to(DEVICE)
