@@ -81,7 +81,7 @@ def rescale_bboxes(out_bbox, size):
     b = b * torch.tensor([img_w, img_h, img_w, img_h], device=DEVICE)
     return b
 
-def filter_bboxes_from_outputs(outputs, size, threshold=0.6):
+def filter_bboxes_from_outputs(outputs, size, threshold=0.75):
     probas = outputs['pred_logits'].softmax(-1)[0, :, :-1]
     keep = probas.max(-1).values > threshold
     bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], size)

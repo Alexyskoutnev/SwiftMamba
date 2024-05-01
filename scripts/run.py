@@ -285,15 +285,15 @@ def load_model(name, reload_data=False, eval_size=10, batch_size=1, classes=['Ca
 
 if __name__ == "__main__":
     # model_name = "mamba"
-    model_name = "yolov5"
+    # model_name = "yolov5"
     model_name = "detr"
     train = True
     # model_path = f"models/VisionMambaBBox_2024-04-30-16-01-47.pt" or None
     model_path = None
-    eval_size = 10
+    eval_size = 1000
     classes = ["Car", "Ambulance", "Bicycle", "Bus", "Helicopter", "Motorcycle", "Truck", "Van"]
     print("Using model: ", model_name)
-    model, dataloader = load_model(model_name, reload_data=False, eval_size=eval_size, batch_size=1, classes=classes, load_path=model_path)
+    model, dataloader = load_model(model_name, reload_data=True, eval_size=eval_size, batch_size=1, classes=classes, load_path=model_path)
     if model_name == "yolov5":
         test_yolo(model, dataloader, save_predicted_img=True)
     elif model_name == "detr":
